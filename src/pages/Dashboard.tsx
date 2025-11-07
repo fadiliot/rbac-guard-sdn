@@ -1,15 +1,56 @@
+import { useState, useEffect } from "react";
 import { Users, Shield, Lock, Activity } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import { Card } from "@/components/ui/card";
 import heroNetwork from "@/assets/hero-network.jpg";
+import { supabase } from "@/integrations/supabase/client";
 
 const Dashboard = () => {
-  const recentActivity = [
-    { id: 1, user: "admin@sdn.local", action: "Updated role permissions", time: "2 minutes ago" },
-    { id: 2, user: "john.doe@sdn.local", action: "Created new user account", time: "15 minutes ago" },
-    { id: 3, user: "jane.smith@sdn.local", action: "Modified network policy", time: "1 hour ago" },
-    { id: 4, user: "admin@sdn.local", action: "Assigned operator role", time: "2 hours ago" },
-  ];
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalRoles: 0,
+    totalPermissions: 0,
+  });
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const fetchStats = async () => {
+    const [
+      { count: usersCount },
+      { data: rolesData },
+      { count: permsCount },
+    ] = await Promise.all([
+      supabase.from("profiles").select("*", { count: "exact", head: true }),
+      supabase.from("user_roles").select("role"),
+      supabase.from("permissions").select("*", { count: "exact", head: true }),
+    ]);
+
+    const uniqueRoles = new Set((rolesData || []).map((r) => r.role)).size;
+
+    setStats({
+      totalUsers: usersCount || 0,
+      totalRoles: uniqueRoles,
+      totalPermissions: permsCount || 0,
+    });
+  };
+
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchActivity();
+  }, []);
+
+  const fetchActivity = async () => {
+    const { data } = await supabase
+      .from("audit_logs")
+      .select("*, profiles(email)")
+      .order("created_at", { ascending: false })
+      .limit(4);
+
+    setRecentActivity(data || []);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -32,22 +73,22 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard
             title="Total Users"
-            value={124}
+            value={stats.totalUsers}
             icon={Users}
-            trend="+12% from last month"
+            trend={`${stats.totalUsers} registered`}
             trendUp
           />
           <StatCard
             title="Active Roles"
-            value={8}
+            value={stats.totalRoles}
             icon={Shield}
-            trend="2 pending approval"
+            trend="5 role types"
           />
           <StatCard
             title="Permissions"
-            value={32}
+            value={stats.totalPermissions}
             icon={Lock}
-            trend="4 recently updated"
+            trend="Granular control"
           />
           <StatCard
             title="Network Status"
@@ -72,14 +113,19 @@ const Dashboard = () => {
               >
                 <div className="w-2 h-2 rounded-full bg-primary mt-2" />
                 <div className="flex-1">
-                  <p className="font-medium text-sm">{activity.action}</p>
+                  <p className="font-medium text-sm">{activity.action.replace(/_/g, " ")}</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    by {activity.user}
+                    by {activity.profiles?.email || "System"}
                   </p>
                 </div>
-                <span className="text-xs text-muted-foreground">{activity.time}</span>
+                <span className="text-xs text-muted-foreground">
+                  {new Date(activity.created_at).toLocaleTimeString()}
+                </span>
               </div>
             ))}
+            {recentActivity.length === 0 && (
+              <div className="text-center text-muted-foreground py-8">No recent activity</div>
+            )}
           </div>
         </Card>
       </div>
